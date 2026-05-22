@@ -1,0 +1,19 @@
+from pydantic import BaseModel
+
+from app.schemas.common import PaginationSchema
+
+
+class SearchResultSchema(BaseModel):
+    slug: str
+    title: str
+    series_id: int
+    cover_url: str | None
+    origin: str | None
+    rating: float | None
+    genres: list[str]
+
+
+class SearchResponseSchema(BaseModel):
+    query: str
+    results: list[SearchResultSchema]
+    pagination: PaginationSchema

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.core.config import settings
 from app.lifespan import lifespan
-from app.api.routes import health
+from app.api.routes import health, search
 
 logging.basicConfig(level=settings.log_level.upper())
 
@@ -16,3 +16,4 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(search.router)

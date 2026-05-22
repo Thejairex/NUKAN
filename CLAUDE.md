@@ -322,12 +322,49 @@ Archivos creados/modificados:
 - `app/main.py` — instancia FastAPI con lifespan, registra routers.
 - `app/api/routes/health.py` — `GET /health` → `{"status": "ok", "version": "0.1.0"}`.
 
+### Milestone 2 — Completado ✓
+`HttpFetcher`: implementación concreta del protocolo `Fetcher`.
+
+- `app/infrastructure/fetchers/http_fetcher.py` — `HttpFetcher` recibe un `httpx.AsyncClient` en el constructor (inyectado, nunca lo crea él mismo). Lógica:
+  - Reintenta automáticamente hasta 3 veces con backoff exponencial (1 s → 8 s) en `TimeoutException` y `NetworkError` via `tenacity`.
+  - Convierte errores de red y status no exitosos en `FetchError` con la URL y el motivo, para que las capas superiores puedan loguear y manejar sin conocer httpx.
+  - Status 429/5xx son retryable; 404 y 403 se propagan directamente sin reintentar.
+- `app/api/deps.py` — se agregó `get_fetcher()`: toma el `AsyncClient` vía `Depends(get_http_client)` y devuelve un `HttpFetcher` listo. Las rutas lo reciben con `Depends(get_fetcher)`.
+
+### Hallazgo crítico — Cloudflare
+NovelUpdates protege **todas** sus páginas con Cloudflare Managed Challenge (JS). `httpx` recibe 403 con challenge page en todas las URLs (incluyendo `/series/{slug}` que devuelve 200 vacío como página por defecto del servidor). **`BrowserFetcher` con Playwright es el fetcher principal**, no un fallback.
+
+### Milestone 3 — Completado ✓
+`BrowserFetcher`: fetcher principal basado en Playwright para superar Cloudflare.
+
+- `app/lifespan.py` — ahora gestiona dos recursos: `http_client` (httpx, para usos sin CF) y `browser` (Playwright Chromium, proceso único compartido). El browser se lanza con flags anti-detección: `--disable-blink-features=AutomationControlled`, `--no-sandbox`, `--disable-dev-shm-usage` (requerido en Docker).
+- `app/infrastructure/fetchers/browser_fetcher.py` — `BrowserFetcher` recibe el `Browser` compartido. Por cada llamada crea un `BrowserContext` + `Page` nuevos (aislamiento entre requests) y los cierra al terminar. Estrategia anti-Cloudflare:
+  - Sobreescribe `navigator.webdriver` vía `add_init_script` antes de navegar.
+  - Detecta el challenge por el título "Just a moment…" y espera hasta 30 s a que se resuelva solo (Chromium ejecuta el JS del challenge automáticamente).
+  - Espera `networkidle` post-challenge con timeout de 8 s (no fatal si no ocurre).
+- `app/api/deps.py` — `get_fetcher()` ahora devuelve `BrowserFetcher` (fetcher principal). `get_http_fetcher()` devuelve `HttpFetcher` para casos sin CF.
+
+### Milestone 4 — Completado ✓
+`SearchParser` + `GET /search`.
+
+- `app/domain/value_objects/pagination.py` — `Pagination(page, has_next)` dataclass frozen.
+- `app/domain/entities/search_result.py` — `SearchResult(slug, title, series_id, cover_url, origin, rating, genres)` y `SearchPage(results, pagination)`.
+- `app/infrastructure/parsers/search_parser.py` — `SearchParser.parse(html) -> SearchPage`. Selectores clave:
+  - Resultados: `div.search_main_box_nu` (25 por página).
+  - Slug: extraído del `href` del link (`/series/<slug>/`).
+  - Series ID: atributo `id` del span adyacente al título (`sid136512` → `136512`).
+  - Origin/rating: `div.search_ratings` contiene `<span class="orgcn">CN</span>(4.5)` — origin del span, rating con regex `\((\d+\.\d+)\)`.
+  - Géneros: `div.search_genre a`.
+  - Paginación: `div.digg_pagination` → `span.current` para página actual, `a.next_page` para `has_next`.
+- `app/schemas/common.py` — `PaginationSchema`.
+- `app/schemas/search.py` — `SearchResultSchema`, `SearchResponseSchema`.
+- `app/services/search_service.py` — `SearchService` orquesta fetcher + parser. Construye la URL como `NOVELUPDATES_SEARCH_URL + query` y agrega `pg=N` solo si `page > 1`.
+- `app/api/routes/search.py` — `GET /search?query=&page=1`. Convierte `FetchError`/`ParseError` en HTTP 502. El mapeo dominio→schema ocurre en la ruta.
+- `app/main.py` — registrado `search.router`.
+
 ### Próximos milestones
-- **Milestone 2**: `HttpFetcher` (implementación de `Fetcher` sobre el `httpx.AsyncClient`).
-- **Milestone 3**: `SearchParser` + `GET /search`.
-- **Milestone 4**: Capa de caché (memoria o Redis).
-- **Milestone 5**: `SeriesParser` + `GET /series/{slug}`.
-- **Milestone 6**: Playwright fallback (solo si se valida la necesidad real).
+- **Milestone 5**: Capa de caché (memoria o Redis).
+- **Milestone 6**: `SeriesParser` + `GET /series/{slug}`.
 
 ## Comandos de desarrollo
 
