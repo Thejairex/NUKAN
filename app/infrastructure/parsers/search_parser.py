@@ -22,6 +22,9 @@ class SearchParser:
 
         boxes = soup.select("div.search_main_box_nu")
         if not boxes:
+            title = soup.title.string if soup.title else "sin título"
+            snippet = html[:800].replace("\n", " ")
+            logger.error("HTML inesperado | title=%r | inicio=%s", title, snippet)
             raise ParseError(_SOURCE, "no se encontraron resultados (div.search_main_box_nu ausente)")
 
         results = [_parse_box(box) for box in boxes]

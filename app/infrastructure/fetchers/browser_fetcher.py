@@ -69,8 +69,10 @@ class BrowserFetcher:
                 # networkidle puede no ocurrir en páginas con polling; no es fatal.
                 pass
 
+            final_title = await page.title()
+            final_url = page.url
             html = await page.content()
-            logger.debug("BrowserFetcher: %s (%d bytes)", full_url, len(html))
+            logger.info("BrowserFetcher: title=%r url=%s bytes=%d", final_title, final_url, len(html))
             return html
 
         finally:
