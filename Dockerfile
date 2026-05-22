@@ -26,6 +26,6 @@ USER appuser
 # Copiar el código de la aplicación
 COPY --chown=appuser:appuser app/ ./app/
 
-EXPOSE 8000
+EXPOSE 8090
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090", "--workers", "1"]
