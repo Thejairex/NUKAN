@@ -2,20 +2,25 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.deps import get_fetcher
+from app.api.deps import get_cache, get_fetcher
+from app.core.config import settings
 from app.core.exceptions import FetchError, ParseError
 from app.infrastructure.fetchers.browser_fetcher import BrowserFetcher
 from app.infrastructure.parsers.search_parser import SearchParser
-from app.schemas.search import SearchResponseSchema, SearchResultSchema
 from app.schemas.common import PaginationSchema
+from app.schemas.search import SearchResponseSchema, SearchResultSchema
+from app.services.cache_service import CacheService
 from app.services.search_service import SearchService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["search"])
 
 
-def _get_search_service(fetcher: BrowserFetcher = Depends(get_fetcher)) -> SearchService:
-    return SearchService(fetcher=fetcher, parser=SearchParser())
+def _get_search_service(
+    fetcher: BrowserFetcher = Depends(get_fetcher),
+    cache: CacheService = Depends(get_cache),
+) -> SearchService:
+    return SearchService(fetcher=fetcher, parser=SearchParser(), cache=cache)
 
 
 @router.get("/search", response_model=SearchResponseSchema)
@@ -25,7 +30,7 @@ async def search(
     service: SearchService = Depends(_get_search_service),
 ) -> SearchResponseSchema:
     try:
-        result = await service.search(query=query, page=page)
+        result = await service.search(query=query, page=page, ttl=settings.cache_search_ttl)
     except FetchError as exc:
         logger.error("FetchError en /search: %s", exc)
         raise HTTPException(status_code=502, detail="Error al obtener datos de la fuente")

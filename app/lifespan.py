@@ -5,12 +5,16 @@ from typing import AsyncGenerator
 from urllib.parse import urlparse
 
 import httpx
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
 from playwright_stealth import Stealth
 
 from app.core.config import settings
 from app.core.constants import DEFAULT_HEADERS
+from app.domain.interfaces.cache import CacheRepository
+from app.infrastructure.cache.memory_cache import MemoryCache
+from app.infrastructure.cache.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,8 @@ http_client: httpx.AsyncClient | None = None
 browser: Browser | None = None
 browser_context: BrowserContext | None = None
 _playwright: Playwright | None = None
+cache: CacheRepository | None = None
+_redis_client: aioredis.Redis | None = None
 
 
 def _pick_proxy() -> dict[str, str] | None:
@@ -47,7 +53,7 @@ def _pick_proxy() -> dict[str, str] | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    global http_client, browser, browser_context, _playwright
+    global http_client, browser, browser_context, _playwright, cache, _redis_client
 
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(settings.http_timeout),
@@ -85,6 +91,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     logger.info("Playwright browser y contexto persistente iniciados")
 
+    if settings.redis_url:
+        _redis_client = aioredis.from_url(settings.redis_url, decode_responses=False)
+        cache = RedisCache(_redis_client)
+        logger.info("Caché: Redis (%s)", settings.redis_url)
+    else:
+        cache = MemoryCache()
+        logger.info("Caché: memoria (sin persistencia entre reinicios)")
+
     yield
 
     await browser_context.close()
@@ -92,8 +106,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _playwright.stop()
     logger.info("Playwright detenido")
 
+    if _redis_client is not None:
+        await _redis_client.aclose()
+
     await http_client.aclose()
     http_client = None
     browser = None
     browser_context = None
     _playwright = None
+    cache = None
+    _redis_client = None

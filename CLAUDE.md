@@ -331,18 +331,26 @@ Archivos creados/modificados:
   - Status 429/5xx son retryable; 404 y 403 se propagan directamente sin reintentar.
 - `app/api/deps.py` — se agregó `get_fetcher()`: toma el `AsyncClient` vía `Depends(get_http_client)` y devuelve un `HttpFetcher` listo. Las rutas lo reciben con `Depends(get_fetcher)`.
 
-### Hallazgo crítico — Cloudflare
-NovelUpdates protege **todas** sus páginas con Cloudflare Managed Challenge (JS). `httpx` recibe 403 con challenge page en todas las URLs (incluyendo `/series/{slug}` que devuelve 200 vacío como página por defecto del servidor). **`BrowserFetcher` con Playwright es el fetcher principal**, no un fallback.
+### Hallazgo crítico — Cloudflare + proxy residencial obligatorio en producción
+NovelUpdates protege **todas** sus páginas con Cloudflare Managed Challenge (JS). `httpx` recibe 403 en todas las URLs. El 200 que devuelve `/series/{slug}` sin autenticar es una página vacía por defecto del servidor, no contenido real.
+
+**Cloudflare en IPs de datacenter nunca resuelve el challenge automáticamente** aunque se use Playwright con stealth. Requiere proxy residencial. En desarrollo local (IP residencial) Playwright pasa el challenge sin proxy.
 
 ### Milestone 3 — Completado ✓
-`BrowserFetcher`: fetcher principal basado en Playwright para superar Cloudflare.
+`BrowserFetcher`: fetcher principal basado en Playwright con contexto persistente y proxy residencial.
 
-- `app/lifespan.py` — ahora gestiona dos recursos: `http_client` (httpx, para usos sin CF) y `browser` (Playwright Chromium, proceso único compartido). El browser se lanza con flags anti-detección: `--disable-blink-features=AutomationControlled`, `--no-sandbox`, `--disable-dev-shm-usage` (requerido en Docker).
-- `app/infrastructure/fetchers/browser_fetcher.py` — `BrowserFetcher` recibe el `Browser` compartido. Por cada llamada crea un `BrowserContext` + `Page` nuevos (aislamiento entre requests) y los cierra al terminar. Estrategia anti-Cloudflare:
-  - Sobreescribe `navigator.webdriver` vía `add_init_script` antes de navegar.
-  - Detecta el challenge por el título "Just a moment…" y espera hasta 30 s a que se resuelva solo (Chromium ejecuta el JS del challenge automáticamente).
-  - Espera `networkidle` post-challenge con timeout de 8 s (no fatal si no ocurre).
-- `app/api/deps.py` — `get_fetcher()` ahora devuelve `BrowserFetcher` (fetcher principal). `get_http_fetcher()` devuelve `HttpFetcher` para casos sin CF.
+- `app/lifespan.py` — gestiona tres recursos: `http_client` (httpx), `browser` (Playwright Chromium), `browser_context` (contexto persistente). Arquitectura clave:
+  - `Stealth().hook_playwright_context(_playwright)` — aplica 20+ patches de fingerprinting (WebGL, plugins, chrome runtime, permissions) a nivel del playwright instance antes de lanzar el browser.
+  - `browser_context` es **persistente** (no se recrea por request). Las cookies `cf_clearance` que emite Cloudflare al resolver el challenge se conservan entre requests. El challenge se enfrenta solo una vez por arranque del servidor.
+  - `_pick_proxy()` — selecciona al azar uno de los proxies de `PROXY_URLS` y lo pasa al contexto. Loguea `host:port` sin credenciales.
+- `app/infrastructure/fetchers/browser_fetcher.py` — recibe el `BrowserContext` compartido (no el `Browser`). Por request abre una `Page` nueva dentro del contexto persistente y la cierra al terminar. Espera hasta 60 s a que el título deje de ser "Just a moment…".
+- `app/api/deps.py` — `get_fetcher()` devuelve `BrowserFetcher(context)`. `get_http_fetcher()` devuelve `HttpFetcher` para casos sin CF.
+- `requirements.txt` — agregado `playwright-stealth==2.0.3`.
+
+### Proxy residencial — configuración
+Sin proxy, Cloudflare bloquea permanentemente las IPs de datacenter (VPS, cloud). Con IP residencial (desarrollo local) funciona sin proxy.
+
+Variable de entorno `PROXY_URLS`: lista de proxies separados por coma, formato `http://user:pass@host:port`. Se elige uno al azar en cada arranque. En desarrollo se puede dejar vacío.
 
 ### Milestone 4 — Completado ✓
 `SearchParser` + `GET /search`.
@@ -362,8 +370,41 @@ NovelUpdates protege **todas** sus páginas con Cloudflare Managed Challenge (JS
 - `app/api/routes/search.py` — `GET /search?query=&page=1`. Convierte `FetchError`/`ParseError` en HTTP 502. El mapeo dominio→schema ocurre en la ruta.
 - `app/main.py` — registrado `search.router`.
 
+### Milestone 5 — Completado ✓
+Capa de caché con soporte dual memoria/Redis.
+
+**Arquitectura de caché:**
+- `app/domain/interfaces/cache.py` — `CacheRepository` Protocol: `get`, `set`, `delete`. Permite intercambiar implementaciones sin tocar los servicios.
+- `app/infrastructure/cache/memory_cache.py` — `MemoryCache`: dict en memoria con TTL calculado con `time.monotonic()`. Usa `asyncio.Lock` para thread-safety. No persiste entre reinicios. Default cuando `REDIS_URL` está vacío.
+- `app/infrastructure/cache/redis_cache.py` — `RedisCache`: wrapper sobre `redis.asyncio`. El cliente Redis se inicializa en `lifespan.py` y se inyecta; no lo crea la caché misma.
+- `app/services/cache_service.py` — `CacheService`: serializa/deserializa con `orjson` antes de guardar en el repositorio. Las capas superiores entregan objetos Python, no strings.
+
+**Integración en lifespan:**
+En `app/lifespan.py` se decide qué implementación usar al arrancar:
+```python
+if settings.redis_url:
+    _redis_client = aioredis.from_url(settings.redis_url)
+    cache = RedisCache(_redis_client)
+else:
+    cache = MemoryCache()
+```
+El cliente Redis se cierra explícitamente en shutdown con `await _redis_client.aclose()`.
+
+**Integración en SearchService:**
+`SearchService` recibe `CacheService` por constructor. Antes de fetch comprueba caché con clave `search:{query}:page:{page}`. Si hay hit retorna sin tocar el browser. Si hay miss, fetchea, parsea, guarda con `ttl=settings.cache_search_ttl` (por defecto 300 s).
+
+**Serialización de entidades de dominio:**
+`SearchResult` y `SearchPage` tienen métodos `to_dict()` / `from_dict()`. Esto mantiene la lógica de serialización en la entidad, sin acoplar `CacheService` a los tipos concretos del dominio.
+
+**Inyección de dependencias:**
+`app/api/deps.py` expone `get_cache_repo()` y `get_cache()`. La ruta pide `get_cache` vía `Depends` y lo pasa al servicio.
+
+**TTLs configurables:**
+- `CACHE_SEARCH_TTL` (default 300 s) — resultados de búsqueda.
+- `CACHE_SERIES_TTL` (default 3600 s) — detalles de serie (Milestone 6).
+- `CACHE_DEFAULT_TTL` (default 300 s) — fallback genérico.
+
 ### Próximos milestones
-- **Milestone 5**: Capa de caché (memoria o Redis).
 - **Milestone 6**: `SeriesParser` + `GET /series/{slug}`.
 
 ## Comandos de desarrollo
