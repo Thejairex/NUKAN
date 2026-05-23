@@ -404,8 +404,36 @@ El cliente Redis se cierra explícitamente en shutdown con `await _redis_client.
 - `CACHE_SERIES_TTL` (default 3600 s) — detalles de serie (Milestone 6).
 - `CACHE_DEFAULT_TTL` (default 300 s) — fallback genérico.
 
-### Próximos milestones
-- **Milestone 6**: `SeriesParser` + `GET /series/{slug}`.
+### Milestone 6 — Completado ✓
+`SeriesParser` + `GET /series/{slug}`.
+
+**Selectores HTML verificados contra página real (mushoku-tensei):**
+| Campo | Selector | Notas |
+|---|---|---|
+| Título | `div.seriestitlenu` | Ausente → `SeriesNotFoundError` |
+| Cover | `div.seriesimg img[src]` | |
+| Tipo | `div#showtype a` (primero) | "Web Novel", "Light Novel", etc. |
+| Idioma | `div#showlang a` (primero) | "Japanese", "Chinese", "Korean" |
+| Status | `div#editstatus` → regex `\(([^)]+)\)$` | "Complete", "Ongoing" — está al final en paréntesis |
+| Año | `div#edityear` | texto plano, se convierte a `int` |
+| Descripción | `div#editdescription` | `get_text(separator='\n')` |
+| Autores | `div#showauthors a` | puede incluir nombre en idioma original |
+| Artistas | `div#showartists a` | |
+| Géneros | `div#seriesgenre a` | |
+| Tags | `div#showtags a` | |
+| Rating | `span.uvotes` → regex `\((\d+\.\d+) / ... (\d+) votes\)` | group(1)=rating, group(2)=votos |
+
+**Detección de 404:** si `div.seriestitlenu` no está presente, se lanza `SeriesNotFoundError(slug)` → HTTP 404 en la ruta. NovelUpdates no devuelve un status HTTP 404 real para slugs inválidos.
+
+**Flujo de SeriesService:** igual que SearchService — comprueba caché con clave `series:{slug}` antes de hacer fetch. TTL = `settings.cache_series_ttl` (3600 s). Usa `Series.to_dict()` / `Series.from_dict()` para serialización.
+
+**Archivos:**
+- `app/domain/entities/series.py` — `Series` dataclass frozen con `to_dict`/`from_dict`.
+- `app/infrastructure/parsers/series_parser.py` — `SeriesParser.parse(html, slug)`.
+- `app/schemas/series.py` — `SeriesSchema` (Pydantic).
+- `app/services/series_service.py` — `SeriesService(fetcher, parser, cache)`.
+- `app/api/routes/series.py` — `GET /series/{slug}`. `SeriesNotFoundError` → 404, `FetchError`/`ParseError` → 502.
+- `app/main.py` — registrado `series.router`.
 
 ## Comandos de desarrollo
 
