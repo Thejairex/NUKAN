@@ -15,5 +15,10 @@ class Settings(BaseSettings):
 
     redis_url: str = ""
 
+    # Lista de proxies residenciales separados por coma.
+    # Formato de cada entrada: http://user:pass@host:port
+    # Se selecciona uno al azar en cada arranque del servidor.
+    proxy_urls: str = ""
+
 
 settings = Settings()
