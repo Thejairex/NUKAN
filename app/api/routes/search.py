@@ -48,6 +48,7 @@ async def search(
                 cover_url=r.cover_url,
                 origin=r.origin,
                 rating=r.rating,
+                series_url=r.series_url,
                 genres=r.genres,
                 chapter_count=r.chapter_count,
             )

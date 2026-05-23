@@ -81,6 +81,7 @@ def _parse_box(box: Tag) -> SearchResult | None:
         cover_url=cover_url,
         origin=origin,
         rating=rating,
+        series_url=url,
         genres=genres,
         chapter_count=chapter_count,
     )

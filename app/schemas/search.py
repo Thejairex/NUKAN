@@ -10,6 +10,7 @@ class SearchResultSchema(BaseModel):
     cover_url: str | None
     origin: str | None
     rating: float | None
+    series_url: str | None
     genres: list[str]
     chapter_count: int | None
 

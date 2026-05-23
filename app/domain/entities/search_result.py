@@ -12,6 +12,7 @@ class SearchResult:
     cover_url: str | None
     origin: str | None       # "CN" | "JP" | "KR" | …
     rating: float | None
+    series_url: str | None = None
     genres: list[str] = field(default_factory=list)
     chapter_count: int | None = None
 
@@ -23,6 +24,7 @@ class SearchResult:
             "cover_url": self.cover_url,
             "origin": self.origin,
             "rating": self.rating,
+            "series_url": self.series_url,
             "genres": list(self.genres),
             "chapter_count": self.chapter_count,
         }
@@ -36,6 +38,7 @@ class SearchResult:
             cover_url=d.get("cover_url"),
             origin=d.get("origin"),
             rating=d.get("rating"),
+            series_url=d.get("series_url"),
             genres=d.get("genres", []),
             chapter_count=d.get("chapter_count"),
         )
