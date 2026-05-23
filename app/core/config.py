@@ -17,8 +17,15 @@ class Settings(BaseSettings):
 
     # Lista de proxies residenciales separados por coma.
     # Formato de cada entrada: http://user:pass@host:port
-    # Se selecciona uno al azar en cada arranque del servidor.
+    # Se priorizan sobre los proxies públicos.
     proxy_urls: str = ""
+
+    # URL opcional para obtener proxies públicos en JSON (formato proxyscrape v3).
+    # Si está vacío, solo se usan los de proxy_urls.
+    proxyscrape_url: str = ""
+
+    # Reintentos máximos rotando proxy ante fallo (CF challenge o error de red).
+    proxy_max_retries: int = 4
 
 
 settings = Settings()
