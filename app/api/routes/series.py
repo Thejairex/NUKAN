@@ -53,4 +53,6 @@ async def get_series(
         tags=series.tags,
         rating=series.rating,
         rating_votes=series.rating_votes,
+        chapter_count=series.chapter_count,
+        volume_count=series.volume_count,
     )

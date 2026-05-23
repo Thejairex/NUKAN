@@ -18,6 +18,8 @@ class Series:
     tags: list[str] = field(default_factory=list)
     rating: float | None = None
     rating_votes: int | None = None
+    chapter_count: int | None = None
+    volume_count: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +37,8 @@ class Series:
             "tags": list(self.tags),
             "rating": self.rating,
             "rating_votes": self.rating_votes,
+            "chapter_count": self.chapter_count,
+            "volume_count": self.volume_count,
         }
 
     @classmethod
@@ -54,4 +58,6 @@ class Series:
             tags=d.get("tags", []),
             rating=d.get("rating"),
             rating_votes=d.get("rating_votes"),
+            chapter_count=d.get("chapter_count"),
+            volume_count=d.get("volume_count"),
         )

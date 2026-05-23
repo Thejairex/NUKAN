@@ -49,6 +49,7 @@ async def search(
                 origin=r.origin,
                 rating=r.rating,
                 genres=r.genres,
+                chapter_count=r.chapter_count,
             )
             for r in result.results
         ],

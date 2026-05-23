@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 _SOURCE = "novelupdates/search"
 
 _RATING_RE = re.compile(r"\((\d+\.\d+)\)")
+_CHAPTER_RE = re.compile(r"(\d+)\s*Chapters?", re.IGNORECASE)
 
 
 class SearchParser:
@@ -66,6 +67,13 @@ def _parse_box(box: Tag) -> SearchResult | None:
 
     genres = [a.get_text(strip=True) for a in box.select("div.search_genre a")]
 
+    chapter_count: int | None = None
+    chapter_icon = box.select_one("i.fa-list-alt[title='Chapter Count']")
+    if chapter_icon and chapter_icon.parent:
+        m = _CHAPTER_RE.search(chapter_icon.parent.get_text())
+        if m:
+            chapter_count = int(m.group(1))
+
     return SearchResult(
         slug=slug,
         title=title,
@@ -74,6 +82,7 @@ def _parse_box(box: Tag) -> SearchResult | None:
         origin=origin,
         rating=rating,
         genres=genres,
+        chapter_count=chapter_count,
     )
 
 

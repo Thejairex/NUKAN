@@ -11,6 +11,7 @@ class SearchResultSchema(BaseModel):
     origin: str | None
     rating: float | None
     genres: list[str]
+    chapter_count: int | None
 
 
 class SearchResponseSchema(BaseModel):

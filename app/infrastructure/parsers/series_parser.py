@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 _SOURCE = "novelupdates/series"
 _RATING_RE = re.compile(r"\((\d+\.\d+)\s*/\s*\d+\.\d+,\s*(\d+)\s*votes?\)", re.IGNORECASE)
 _STATUS_RE = re.compile(r"\(([^)]+)\)\s*$")
+_CHAPTERS_RE = re.compile(r"(\d+)\s*Chapters?", re.IGNORECASE)
+_VOLUMES_RE = re.compile(r"(\d+)\s*Volumes?", re.IGNORECASE)
 
 
 class SeriesParser:
@@ -37,10 +39,18 @@ class SeriesParser:
 
         status_div = soup.select_one("div#editstatus")
         status: str | None = None
+        chapter_count: int | None = None
+        volume_count: int | None = None
         if status_div:
             raw_status = status_div.get_text(strip=True)
             m = _STATUS_RE.search(raw_status)
             status = m.group(1).strip() if m else raw_status or None
+            mc = _CHAPTERS_RE.search(raw_status)
+            if mc:
+                chapter_count = int(mc.group(1))
+            mv = _VOLUMES_RE.search(raw_status)
+            if mv:
+                volume_count = int(mv.group(1))
 
         year_div = soup.select_one("div#edityear")
         year: int | None = None
@@ -87,4 +97,6 @@ class SeriesParser:
             tags=tags,
             rating=rating,
             rating_votes=rating_votes,
+            chapter_count=chapter_count,
+            volume_count=volume_count,
         )

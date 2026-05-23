@@ -16,3 +16,5 @@ class SeriesSchema(BaseModel):
     tags: list[str]
     rating: float | None
     rating_votes: int | None
+    chapter_count: int | None
+    volume_count: int | None

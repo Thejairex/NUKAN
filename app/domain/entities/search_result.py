@@ -13,6 +13,7 @@ class SearchResult:
     origin: str | None       # "CN" | "JP" | "KR" | …
     rating: float | None
     genres: list[str] = field(default_factory=list)
+    chapter_count: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -23,6 +24,7 @@ class SearchResult:
             "origin": self.origin,
             "rating": self.rating,
             "genres": list(self.genres),
+            "chapter_count": self.chapter_count,
         }
 
     @classmethod
@@ -35,6 +37,7 @@ class SearchResult:
             origin=d.get("origin"),
             rating=d.get("rating"),
             genres=d.get("genres", []),
+            chapter_count=d.get("chapter_count"),
         )
 
 
