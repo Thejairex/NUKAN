@@ -11,8 +11,10 @@ logger = logging.getLogger(__name__)
 _SOURCE = "novelupdates/series"
 _RATING_RE = re.compile(r"\((\d+\.\d+)\s*/\s*\d+\.\d+,\s*(\d+)\s*votes?\)", re.IGNORECASE)
 _STATUS_RE = re.compile(r"\(([^)]+)\)\s*$")
-_CHAPTERS_RE = re.compile(r"(\d+)\s*Chapters?", re.IGNORECASE)
 _VOLUMES_RE = re.compile(r"(\d+)\s*Volumes?", re.IGNORECASE)
+
+# Filas que muestra NovelUpdates por página en la tabla de releases.
+_RELEASES_PER_PAGE = 15
 
 
 class SeriesParser:
@@ -39,15 +41,11 @@ class SeriesParser:
 
         status_div = soup.select_one("div#editstatus")
         status: str | None = None
-        chapter_count: int | None = None
         volume_count: int | None = None
         if status_div:
             raw_status = status_div.get_text(strip=True)
             m = _STATUS_RE.search(raw_status)
             status = m.group(1).strip() if m else raw_status or None
-            mc = _CHAPTERS_RE.search(raw_status)
-            if mc:
-                chapter_count = int(mc.group(1))
             mv = _VOLUMES_RE.search(raw_status)
             if mv:
                 volume_count = int(mv.group(1))
@@ -77,9 +75,11 @@ class SeriesParser:
                 rating = float(m2.group(1))
                 rating_votes = int(m2.group(2))
 
+        chapter_count = _count_releases(soup)
+
         logger.info(
-            "SeriesParser: slug=%r title=%r genres=%d tags=%d",
-            slug, title, len(genres), len(tags),
+            "SeriesParser: slug=%r title=%r chapters=%s genres=%d tags=%d",
+            slug, title, chapter_count, len(genres), len(tags),
         )
 
         return Series(
@@ -100,3 +100,39 @@ class SeriesParser:
             chapter_count=chapter_count,
             volume_count=volume_count,
         )
+
+
+def _count_releases(soup: BeautifulSoup) -> int | None:
+    """Cuenta las releases traducidas desde table#myTable.
+
+    Si la tabla tiene una sola página, el conteo es exacto.
+    Si tiene varias páginas, se estima como (last_page - 1) * 15 + rows_page_1.
+    La última página puede tener < 15 filas, así que el resultado puede
+    sobrestimar en hasta 14 unidades.
+    """
+    tbl = soup.select_one("table#myTable")
+    if tbl is None:
+        return None
+
+    rows = tbl.select("tr")
+    data_rows = max(len(rows) - 1, 0)  # descontar fila de encabezado
+
+    pag = tbl.find_next_sibling("div", class_="digg_pagination")
+    if pag is None:
+        return data_rows
+
+    last_page = _last_page(pag)
+    if last_page <= 1:
+        return data_rows
+
+    return (last_page - 1) * _RELEASES_PER_PAGE + data_rows
+
+
+def _last_page(pag_div: BeautifulSoup) -> int:
+    """Extrae el número de la última página de un div.digg_pagination."""
+    links = [a for a in pag_div.select("a") if "next_page" not in (a.get("class") or [])]
+    if not links:
+        return 1
+    href = links[-1].get("href", "")
+    m = re.search(r"pg=(\d+)", href)
+    return int(m.group(1)) if m else 1
