@@ -27,6 +27,8 @@ class ProxyRotator:
         self._env_pool: list[dict[str, str]] = []
         self._public_pool: list[dict[str, str]] = []
         self._dead: set[str] = set()
+        # Último proxy con éxito — se prueba primero en futuras requests.
+        self._preferred: dict[str, str] | None = None
 
     @property
     def alive_count(self) -> int:
@@ -88,15 +90,27 @@ class ProxyRotator:
             out.append(proxy)
         return out
 
-    def acquire(self) -> dict[str, str] | None:
+    def acquire(self, exclude: set[str] | None = None) -> dict[str, str] | None:
+        skip = self._dead | (exclude or set())
+
+        if self._preferred and self._preferred["server"] not in skip:
+            return self._preferred
+
         for source in (self._env_pool, self._public_pool):
-            candidates = [p for p in source if p["server"] not in self._dead]
+            candidates = [p for p in source if p["server"] not in skip]
             if candidates:
                 return random.choice(candidates)
         return None
 
+    def mark_alive(self, proxy: dict[str, str]) -> None:
+        if self._preferred is None or self._preferred["server"] != proxy["server"]:
+            logger.info("Proxy preferido actualizado: %s", proxy["server"])
+        self._preferred = proxy
+
     def mark_dead(self, proxy: dict[str, str]) -> None:
         self._dead.add(proxy["server"])
+        if self._preferred and self._preferred["server"] == proxy["server"]:
+            self._preferred = None
         logger.info(
             "Proxy descartado: %s (vivos: %d)", proxy["server"], self.alive_count
         )

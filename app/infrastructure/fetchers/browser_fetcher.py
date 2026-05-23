@@ -48,13 +48,15 @@ class BrowserFetcher:
     ) -> str:
         full_url = _build_url(url, params)
         last_error = "sin intentos realizados"
+        tried: set[str] = set()
 
         for attempt in range(1, self._max_retries + 1):
-            proxy = self._rotator.acquire()
+            proxy = self._rotator.acquire(exclude=tried)
             if proxy is None:
                 raise FetchError(
                     full_url, f"pool de proxies agotado tras {attempt - 1} intentos"
                 )
+            tried.add(proxy["server"])
 
             logger.info(
                 "fetch %s — intento %d/%d via %s",
@@ -67,6 +69,7 @@ class BrowserFetcher:
             try:
                 html = await self._try_once(full_url, proxy)
                 logger.info("fetch OK via %s (%d bytes)", proxy["server"], len(html))
+                self._rotator.mark_alive(proxy)
                 return html
             except _AttemptFailed as exc:
                 last_error = exc.reason
